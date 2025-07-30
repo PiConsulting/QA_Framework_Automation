@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuración de OpenAI / Azure AI Foundry
-openai.api_key = os.getenv("OPENAI_NAPI_KEY")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 openai.api_base = os.getenv("OPENAI_API_BASE")
 openai.api_type = "azure"
 openai.api_version = os.getenv("OPENAI_API_VERSION")
