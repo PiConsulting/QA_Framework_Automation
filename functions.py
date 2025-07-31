@@ -25,6 +25,18 @@ N_REPHRASES = 3  # Cantidad de reformulaciones
 SIMILARITY_THRESHOLD = 0.8
 CONTENT_SAFETY_MESSAGE = "The response was filtered due to the prompt triggering Azure OpenAI's content management policy"
 
+SIMILARITY_PROMPT = (
+    "Compara la similitud de las siguientes dos respuestas a esta pregunta\n"
+    "{{pregunta}}\n"
+    "Respuesta 1:\n"
+    "{{respuesta1}}\n"
+    "Respuesta 2:\n"
+    "{{respuesta2}}\n"
+    "\n"
+    "**El número debe variar entre 0 y 1, siendo 0 respuestas completamente distintas y 1 respuestas idénticas**\n"
+    "**Solo responde con el número**"
+)
+
 def rephrase_question(question, previous_rephrasings):
     response = openai.ChatCompletion.create(
         engine=REPHRASER_MODEL,
@@ -52,13 +64,30 @@ def generate_answer(question):
     return answer, elapsed_time
 
 
-def compute_similarity(text1, text2):
+def compute_similarity_cosine(text1, text2):
     emb1 = model_sbert.encode(text1, convert_to_tensor=True)
     emb2 = model_sbert.encode(text2, convert_to_tensor=True)
     return float(util.cos_sim(emb1, emb2))
 
+def compute_similarity_llm(pregunta, respuesta1, respuesta2):
+    prompt = SIMILARITY_PROMPT.replace("{{pregunta}}", pregunta)\
+        .replace("{{respuesta1}}", respuesta1)\
+        .replace("{{respuesta2}}", respuesta2)
+    response = openai.ChatCompletion.create(
+        engine=EVALUATOR_MODEL,
+        messages=[
+            {"role": "system", "content": prompt}
+        ],
+        temperature=0.0,
+    )
+    # Intentar extraer el número de la respuesta
+    try:
+        similitud = float(response["choices"][0]["message"]["content"].strip())
+    except Exception:
+        similitud = 0.0
+    return similitud
 
-def procesar_excel(file_path):
+def procesar_excel(file_path, similarity_method="cosine"):
     # Leer todas las hojas del archivo Excel
     xls = pd.ExcelFile(file_path)
     resultados = []
@@ -66,6 +95,7 @@ def procesar_excel(file_path):
     for sheet_name in xls.sheet_names:
         print(f"Procesando hoja: {sheet_name}")
         df_input = pd.read_excel(xls, sheet_name=sheet_name)
+        df_input["Respuesta esperada"] = df_input["Respuesta esperada"].astype(str)
 
         for idx, row in df_input.iterrows():
             print(f"Procesando fila {idx+1}: {row['Pregunta']}")
@@ -84,9 +114,10 @@ def procesar_excel(file_path):
                 try:
                     pregunta_reformulada = rephrase_question(pregunta, previous_rephrasings)
                     respuesta, tiempo = generate_answer(pregunta_reformulada)
-                    similitud = compute_similarity(respuesta, esperada)
+                    similitud_coseno = compute_similarity_cosine(respuesta, esperada)
+                    similitud_llm = compute_similarity_llm(pregunta, respuesta, esperada)
 
-                    similitudes.append(similitud)
+                    similitudes.append(similitud_coseno)  # Puedes elegir cuál usar para promedios
                     previous_rephrasings.append(pregunta_reformulada)
                     resultados.append({
                         "Hoja": sheet_name,
@@ -95,14 +126,15 @@ def procesar_excel(file_path):
                         "Pregunta reformulada": pregunta_reformulada,
                         "Respuesta generada": respuesta,
                         "Respuesta esperada": esperada,
-                        "Similitud": round(similitud, 4),
+                        "Similitud Coseno": round(similitud_coseno, 4),
+                        "Similitud LLM": round(similitud_llm, 4),
                         "Tiempo (s)": tiempo,
-                        ">0.8": similitud > SIMILARITY_THRESHOLD
+                        ">0.8 Coseno": similitud_coseno > SIMILARITY_THRESHOLD,
+                        ">0.8 LLM": similitud_llm > SIMILARITY_THRESHOLD
                     })
 
                 except Exception as e:
                     print(f"❌ Error en hoja {sheet_name} - fila {idx + 2}: {e}")
-                    # Si el error es de Content Safety, lo registramos igual en resultados
                     error_msg = str(e)
                     if CONTENT_SAFETY_MESSAGE in error_msg:
                         resultados.append({
@@ -119,7 +151,8 @@ def procesar_excel(file_path):
 
             # Métricas por pregunta original
             if similitudes:
-                similitud_promedio = round(np.mean(similitudes), 4)
+                similitud_coseno_prom = round(np.mean([r["Similitud Coseno"] for r in resultados if r["Pregunta original"] == pregunta and r["Hoja"] == sheet_name]), 4)
+                similitud_llm_prom = round(np.mean([r["Similitud LLM"] for r in resultados if r["Pregunta original"] == pregunta and r["Hoja"] == sheet_name]), 4)
                 resultados.append({
                     "Hoja": sheet_name,
                     "Fila": idx + 2,
@@ -127,9 +160,11 @@ def procesar_excel(file_path):
                     "Pregunta reformulada": "- PROMEDIO -",
                     "Respuesta generada": "",
                     "Respuesta esperada": esperada,
-                    "Similitud": similitud_promedio,
+                    "Similitud Coseno": similitud_coseno_prom,
+                    "Similitud LLM": similitud_llm_prom,
                     "Tiempo (s)": "",
-                    ">0.8": similitud_promedio > SIMILARITY_THRESHOLD
+                    ">0.8 Coseno": similitud_coseno_prom > SIMILARITY_THRESHOLD,
+                    ">0.8 LLM": similitud_llm_prom > SIMILARITY_THRESHOLD
                 })
 
     df_result = pd.DataFrame(resultados)
