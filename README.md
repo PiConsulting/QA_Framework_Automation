@@ -88,3 +88,5 @@ El archivo `reporte_llm.xlsx` contendrá, para cada pregunta:
 ## Licencia
 
 MIT 
+
+Con amor equipo QA
