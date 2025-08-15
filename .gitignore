@@ -5,3 +5,4 @@ __pycache__
 *.pyo
 *.pyd
 reporte_llm.xlsx
+reporte_llm_*.xlsx
