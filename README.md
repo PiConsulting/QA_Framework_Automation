@@ -12,7 +12,6 @@ qa-challenge/
 ├── functions.py           # Funciones principales para procesamiento, reformulación y evaluación
 ├── main.py                # Script principal para ejecutar el procesamiento
 ├── requirements.txt       # Dependencias del proyecto
-├── test.py                # Script de pruebas
 └── venv/                  # Entorno virtual de Python
 ```
 
