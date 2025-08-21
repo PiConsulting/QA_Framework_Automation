@@ -84,6 +84,9 @@ El archivo `reporte_llm.xlsx` contendrá, para cada pregunta:
 - Si usas Azure OpenAI, asegúrate de que el nombre del deployment y el endpoint sean correctos.
 - Si ves errores como `Resource not found`, revisa las variables de entorno y el nombre del deployment/modelo.
 
+## Evaluación/Clasificación
+- El porcentaje de aceptación para un POC es del 70% y para un deploy un píso del 80%
+
 ## Licencia
 
 MIT 
