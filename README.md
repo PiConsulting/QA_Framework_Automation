@@ -48,8 +48,11 @@ qa-challenge/
    ```
    OPENAI_API_KEY=tu_clave
    OPENAI_API_BASE=https://<tu-recurso>.openai.azure.com/
+   OPENAI_DEPLOYMENT_MODEL=modelo-del-deployment-opeanai
    OPENAI_API_VERSION=2023-05-15
+   AZURE_DEPLOYMENT_MODEL=modelo-del-deployment-de-azure
    AZURE_DEPLOYMENT_REPHRASER=nombre-del-deployment
+
    ```
 
 ## Uso
