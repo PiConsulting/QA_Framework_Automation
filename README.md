@@ -58,9 +58,10 @@ qa-challenge/
 ## Uso
 
 1. **Prepara el archivo de entrada**  
-   Asegúrate de que `archivo.xlsx` tenga al menos dos columnas:  
+   Asegúrate de que `archivo.xlsx` tenga al menos tres columnas:  
    - `Pregunta`
-   - `Respuesta esperada`
+   - `Fuente (si aplica)`
+   - `Respuesta deseada`
 
 2. **Ejecuta el procesamiento principal:**
    ```bash
