@@ -12,6 +12,11 @@ from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer, util
 import openai
 
+# MLflow helpers (opt-in via .env MLFLOW_ENABLED=1)
+from mlflow_integration import (
+    start_run, log_params, log_metrics, log_artifact, log_dict, end_run
+)
+
 # ======================== Bootstrap / Config ========================
 
 load_dotenv()
@@ -54,7 +59,7 @@ RUBRIC_JSON = os.getenv("RUBRIC_JSON", "")  # si RUBRIC_SCORING=global, podés d
 # Mensaje típico de Content Safety (Azure)
 CONTENT_SAFETY_MESSAGE = "The response was filtered due to the prompt triggering Azure OpenAI's content management policy"
 
-# SBERT
+# SBERT (embeddings para similitud coseno)
 model_sbert = SentenceTransformer("all-MiniLM-L6-v2")
 
 # ======================== Prompts base =============================
@@ -232,6 +237,13 @@ def _load_global_rubric() -> dict:
     return DEFAULT_RUBRIC
 
 def _normalize_instance_rubric(raw: Any) -> dict:
+    """
+    Acepta:
+      - dict con keys score1_description..score5_description
+      - dict binario (score0/score1) para casos simples
+      - str JSON (en cuyo caso se parsea)
+    Devuelve un dict con score1..score5; si falta, aproxima.
+    """
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -257,6 +269,9 @@ def _normalize_instance_rubric(raw: Any) -> dict:
     return merged
 
 def rubric_score_llm(user_query: str, response: str, reference: str, rubric: dict) -> tuple[int, str]:
+    """
+    Devuelve (score_int_1_5, rationale_str).
+    """
     rubric_text = "\n".join([f"{k}: {v}" for k, v in rubric.items()])
     prompt = (
         "Evalúa la RESPUESTA frente a la REFERENCIA usando el siguiente rubric de 1 a 5.\n"
@@ -303,9 +318,11 @@ def azure_prompt_shields_check(user_input: str, documents: Optional[List[str]] =
     return False, "", {}
 
 def detect_prompt_injection(user_input: str, documents: Optional[List[str]] = None) -> Tuple[bool, str, Dict[str, Any]]:
+    # 1) Azure Shields
     flagged, cat, details = azure_prompt_shields_check(user_input, documents)
     if flagged:
         return True, cat, details
+    # 2) Reglas locales
     lowered = (user_input or "").lower()
     for pattern, category in PI_RULES:
         if re.search(pattern, lowered):
@@ -359,6 +376,10 @@ def procesar_excel(file_path: str, similarity_method: str = "cosine") -> pd.Data
         print(f"❌ No se encontró el archivo: {file_path}")
         return None
 
+    # MLflow: inicio de run
+    run_name = f"qa_eval_{time.strftime('%Y%m%d_%H%M%S')}"
+    run = start_run(run_name=run_name)
+
     try:
         xls = pd.ExcelFile(file_path)
         resultados: List[Dict[str, Any]] = []
@@ -366,6 +387,22 @@ def procesar_excel(file_path: str, similarity_method: str = "cosine") -> pd.Data
         print(f"📋 Archivo encontrado: {file_path}")
         print(f"📄 Hojas: {xls.sheet_names}")
         print(f"🔄 Procesando {len(xls.sheet_names)} hoja(s)…\n")
+
+        # Log parámetros de ejecución en MLflow
+        log_params({
+            "input_file": os.path.basename(file_path),
+            "REPHRASER_MODEL": REPHRASER_MODEL,
+            "EVALUATOR_MODEL": EVALUATOR_MODEL,
+            "N_REPHRASES": N_REPHRASES,
+            "REQUEST_TIMEOUT_SECONDS": REQUEST_TIMEOUT_SECONDS,
+            "TEMPERATURE_REPHRASER": TEMPERATURE_REPHRASER,
+            "TEMPERATURE_MODEL": TEMPERATURE_MODEL,
+            "SELF_CHECK_THRESHOLD": SELF_CHECK_THRESHOLD,
+            "PI_ACTION": PI_ACTION,
+            "USE_PROMPT_SHIELDS": USE_PROMPT_SHIELDS,
+            "STRICT_BLOCK_ON_POLICY": os.getenv("STRICT_BLOCK_ON_POLICY","0"),
+            "RUBRIC_SCORING": os.getenv("RUBRIC_SCORING","off"),
+        })
 
         for sidx, sheet_name in enumerate(xls.sheet_names, 1):
             print(f"📊 [{sidx}/{len(xls.sheet_names)}] Hoja: '{sheet_name}'")
@@ -547,6 +584,7 @@ def procesar_excel(file_path: str, similarity_method: str = "cosine") -> pd.Data
 
         if not resultados:
             print("❌ No hubo resultados; verifique formato del Excel.")
+            end_run(status="FAILED")
             return None
 
         # -------------------- DataFrame y métricas --------------------
@@ -645,6 +683,36 @@ def procesar_excel(file_path: str, similarity_method: str = "cosine") -> pd.Data
                 rub_rows = [["Score","%"]]+[[k,v] for k,v in rubric_pct.items()]
                 pd.DataFrame(rub_rows, columns=["Score","%"]).to_excel(writer, index=False, sheet_name="Rubrics")
 
+        # --- MLflow: métricas y artifacts ---
+        core_metrics = {
+            "total": total,
+            "ok": ok,
+            "blocked": blocked,
+            "errors": errs,
+            "cos_avg_ok": float(cos_avg),
+            "llm_avg_ok": float(llm_avg),
+            "selfcheck_avg_ok": float(sc_avg),
+        }
+        if abr is not None: core_metrics["ABR"] = float(abr)
+        if fpr is not None: core_metrics["FPR"] = float(fpr)
+        if js  is not None: core_metrics["JS"]  = float(js)
+        if rubric_avg is not None: core_metrics["rubric_avg_ok"] = float(rubric_avg)
+
+        log_metrics(core_metrics)
+        log_dict(dist_cos, "distributions/sim_cos_buckets.json")
+        log_dict(dist_llm, "distributions/sim_llm_buckets.json")
+        log_dict(dist_sc,  "distributions/selfcheck_buckets.json")
+        if rubric_avg is not None:
+            log_dict(rubric_pct, "rubrics/rubric_distribution.json")
+
+        log_artifact(out, artifact_path="reports")
+        try:
+            sample_csv = f"results_sample_{timestamp}.csv"
+            df.head(100).to_csv(sample_csv, index=False)
+            log_artifact(sample_csv, artifact_path="samples")
+        except Exception:
+            pass
+
         print("\n==================== RESUMEN ====================")
         print(f"Total: {total} | OK: {ok} | Blocked: {blocked} | Errors: {errs}")
         print(f"Coseno avg (OK): {cos_avg*100:.1f}% | LLM avg (OK): {llm_avg*100:.1f}%")
@@ -657,8 +725,10 @@ def procesar_excel(file_path: str, similarity_method: str = "cosine") -> pd.Data
         print(f"Reporte: {out}")
         print("================================================\n")
 
+        end_run(status="FINISHED")
         return df
 
     except Exception as e:
         print(f"❌ Error procesando archivo: {e}")
+        end_run(status="FAILED")
         return None
