@@ -35,6 +35,10 @@ USE_PROMPT_SHIELDS = os.getenv("USE_PROMPT_SHIELDS", "0") == "1"
 CS_ENDPOINT = os.getenv("CS_ENDPOINT")  # https://<cs>.cognitiveservices.azure.com
 CS_KEY = os.getenv("CS_KEY")
 
+USE_LOCAL_RAG = os.getenv("USE_LOCAL_RAG", "0") == "1"
+RAG_URL = os.getenv("RAG_URL", "").strip()
+RAG_TIMEOUT = int(os.getenv("RAG_TIMEOUT", "45"))
+
 # Parámetros/flags
 N_REPHRASES = int(os.getenv("N_REPHRASES", "3"))
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "35"))
@@ -133,7 +137,7 @@ JAILBREAK_MARKERS = [
 # ======================== Rubrics (definiciones) ===================
 
 DEFAULT_RUBRIC = {
-    "score1_description": "La respuesta es completamente incorrecta y no aborda la referencia.",
+    "score1_description": "La respuesta tiene contenido que es completamente incorrecta y no aborda la referencia.",
     "score2_description": "La respuesta tiene algo de acierto pero contiene errores graves u omisiones relevantes respecto de la referencia.",
     "score3_description": "La respuesta es mayormente correcta pero le falta claridad, exhaustividad o detalles menores para cubrir la referencia.",
     "score4_description": "La respuesta es correcta y clara, con solo omisiones menores o pequeñas inexactitudes.",
@@ -181,6 +185,7 @@ def rephrase_question(question: str, previous_rephrasings: List[str], prompt_ver
     )
 
 def generate_answer(question: str) -> Tuple[str, float]:
+
     start = time.time()
     answer = _chat(
         engine=EVALUATOR_MODEL,
@@ -191,6 +196,28 @@ def generate_answer(question: str) -> Tuple[str, float]:
         temperature=TEMPERATURE_MODEL,
     )
     return answer, round(time.time() - start, 2)
+
+def generate_answer_via_rag(question: str) -> Tuple[str, float]:
+   """
+   Llama a un endpoint HTTP de RAG propio.
+   Espera un JSON como: { "question": "...", "answer": "..." }
+   Ajusta el payload/keys si tu RAG usa otra forma.
+   """
+   start = time.time()
+   try:
+       payload = {"question": question}
+       r = requests.post(RAG_URL, json=payload, timeout=RAG_TIMEOUT)
+       r.raise_for_status()
+       data = r.json()
+       ans = data.get("answer") or data.get("output") or data.get("text") or ""
+       return str(ans).strip(), round(time.time() - start, 2)
+   except Exception as e:
+       # Propaga excepción para que el pipeline registre status=error
+       raise RuntimeError(f"RAG HTTP error: {e}") from e
+   
+
+
+
 
 # ======================== Similaridad / Self-check =================
 
@@ -520,8 +547,12 @@ def procesar_excel(file_path: str, similarity_method: str = "cosine") -> pd.Data
                             pi_status = "clean"
 
                         # 4) Respuesta
-                        ans, t = generate_answer(q_to_ask)
+                        # ans, t = generate_answer(q_to_ask)
 
+                        if USE_LOCAL_RAG and RAG_URL:
+                            ans, t = generate_answer_via_rag(q_to_ask)
+                        else:
+                            ans, t = generate_answer(q_to_ask)
                         # 5) Similitudes
                         sim_cos = compute_similarity_cosine(ans, gold)
                         sim_llm = compute_similarity_llm(q, ans, gold)
