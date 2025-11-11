@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime
 
 # === CONFIGURACIÓN ===
-ENDPOINT_BASE = "https://ca-zxkvhdr7ju7ku-orchestrator.graybay-13f3c191.eastus.azurecontainerapps.io/orchestrator"
+ENDPOINT_BASE = "USE YOUR OWN ENDPOINT"
 CONFIG = {
     "archivo_entrada": "preguntas.xlsx",
     "timeout": 120,                # Tiempo máximo por request
@@ -38,10 +38,8 @@ def cargar_preguntas(archivo: str) -> pd.DataFrame:
 def enviar_pregunta(pregunta: str, reintentos: int = 2, timeout: int = 120):
     """Envía una pregunta al endpoint SSE y devuelve la respuesta completa"""
     payload = {"ask": pregunta}
-    headers = {
-        "Accept": "text/event-stream",
-        "Content-Type": "application/json",
-        "X-API-KEY": "servel"
+    headers = { 
+        "aca van tus headers si los necesitas": "valor"
     }
 
     for intento in range(reintentos + 1):

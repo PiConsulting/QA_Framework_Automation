@@ -7,11 +7,7 @@ from datetime import datetime
 
 # === CONFIGURACIÓN ===
 ENDPOINTS = {
-    "gpt-4o": "https://rag-servel-app-b7aybzatc8hfhsah.eastus2-01.azurewebsites.net/generate-gpt-4o",
-    "gpt-4o-mini": "https://rag-servel-app-b7aybzatc8hfhsah.eastus2-01.azurewebsites.net/generate-gpt-4o-mini",
-    "gpt-4.1": "https://rag-servel-app-b7aybzatc8hfhsah.eastus2-01.azurewebsites.net/generate-gpt-4.1",
-    "gpt-4.1-mini": "https://rag-servel-app-b7aybzatc8hfhsah.eastus2-01.azurewebsites.net/generate-gpt-4.1-mini",
-    "gpt-5-nano": "https://rag-servel-app-b7aybzatc8hfhsah.eastus2-01.azurewebsites.net/generate-gpt-5-nano"
+    "MODEL": "USE YOUR OWN ENDPOINT"
 }
 
 CONFIG = {
@@ -63,8 +59,7 @@ def enviar_pregunta(
     url = ENDPOINTS[modelo]
     payload = {"question": pregunta}
     headers = {
-        "accept": "application/json",
-        "Content-Type": "application/json"
+        "aca van tus headers si los necesitas": "valor"
     }
 
     for intento in range(reintentos + 1):
@@ -138,8 +133,7 @@ def enviar_pregunta(
 def procesar_preguntas_comparativo(df: pd.DataFrame) -> List[Dict]:
     """Procesa todas las preguntas con TODOS los modelos - MODELO POR MODELO"""
 
-    modelos = ["gpt-4o", "gpt-4o-mini",
-               "gpt-4.1", "gpt-4.1-mini", "gpt-5-nano"]
+    modelos = ["MODEL"]
     total_preguntas = len(df)
 
     print("\n" + "=" * 80)
@@ -246,8 +240,7 @@ def guardar_resultados(resultados: List[Dict], archivo_entrada: str):
     df_resultados = pd.DataFrame(resultados)
 
     # Definir orden de columnas
-    modelos = ["gpt-4o", "gpt-4o-mini",
-               "gpt-4.1", "gpt-4.1-mini", "gpt-5-nano"]
+    modelos = ["MODEL"]
 
     columnas_orden = ["pregunta"]
 
