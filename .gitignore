@@ -1,8 +1,6 @@
-.env
-venv
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-reporte_llm.xlsx
-reporte_llm_*.xlsx
+# Ignorar todos los archivos Excel
+*.xlsx
+*.xls
+
+# Excepto permitir preguntas.xlsx
+!preguntas.xlsx
